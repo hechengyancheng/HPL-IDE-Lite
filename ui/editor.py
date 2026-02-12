@@ -6,6 +6,9 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import font
 
+from .autocomplete import AutocompleteManager
+from .syntax_checker import SyntaxChecker
+
 
 class CodeEditor(ctk.CTkFrame):
     """HPL 代码编辑器"""
@@ -18,6 +21,11 @@ class CodeEditor(ctk.CTkFrame):
         self._bind_events()
         
         self.error_line = None
+        
+        # 初始化自动补全和语法检查
+        self.autocomplete = AutocompleteManager(self.text_widget)
+        self.syntax_checker = SyntaxChecker(self.text_widget, self._on_syntax_errors)
+        self.syntax_errors = []
     
     def _setup_ui(self):
         """设置界面"""
@@ -145,6 +153,30 @@ class CodeEditor(ctk.CTkFrame):
         """按键释放时更新"""
         self._update_line_numbers()
         self._apply_syntax_highlighting()
+        # 语法检查由 SyntaxChecker 自动处理
+    
+    def _on_syntax_errors(self, errors):
+        """语法错误回调"""
+        self.syntax_errors = errors
+        
+        # 清除之前的错误标记
+        self.text_widget.tag_remove("error", "1.0", "end")
+        
+        # 标记所有错误行
+        for error in errors:
+            self.text_widget.tag_add("error", f"{error.line}.0", f"{error.line}.end")
+        
+        # 通知父窗口显示错误
+        if hasattr(self.master, 'on_syntax_errors'):
+            self.master.on_syntax_errors(errors)
+    
+    def get_syntax_errors(self):
+        """获取当前语法错误"""
+        return self.syntax_errors
+    
+    def check_syntax_now(self):
+        """立即执行语法检查"""
+        return self.syntax_checker.check_now()
     
     def _apply_syntax_highlighting(self):
         """应用语法高亮"""
@@ -249,6 +281,8 @@ class CodeEditor(ctk.CTkFrame):
         self._update_line_numbers()
         self._apply_syntax_highlighting()
         self.error_line = None
+        # 触发语法检查
+        self.syntax_checker.check_now()
     
     def clear(self):
         """清空"""
@@ -306,6 +340,8 @@ class CodeEditor(ctk.CTkFrame):
         self.text_widget.event_generate("<<Paste>>")
         self._update_line_numbers()
         self._apply_syntax_highlighting()
+        # 触发语法检查
+        self.syntax_checker.check_now()
     
     def show_find(self):
         """显示查找对话框"""

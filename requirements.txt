@@ -1,2 +1,2 @@
 customtkinter>=5.2.0
-hpl-runtime
+hpl-runtime>=1.1.2
