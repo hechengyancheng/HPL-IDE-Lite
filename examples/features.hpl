@@ -1,0 +1,107 @@
+# HPL 特性演示程序
+# 展示了 HPL 的各种语言特性
+
+imports:
+  - math
+  - time
+
+classes:
+  Calculator:
+    init: () => {
+        this.result = 0
+      }
+    
+    add: (a, b) => {
+        return a + b
+      }
+    
+    factorial: (n) => {
+        if (n <= 1) :
+          return 1
+        return n * this.factorial(n - 1)
+      }
+    
+    demonstrate: () => {
+        echo "=== Calculator Demo ==="
+        
+        # 基本运算
+        sum = this.add(10, 20)
+        echo "10 + 20 = " + sum
+        
+        # 阶乘
+        fact = this.factorial(5)
+        echo "5! = " + fact
+        
+        # 使用 math 模块
+        echo ""
+        echo "Using math module:"
+        echo "PI = " + math.PI
+        echo "sqrt(16) = " + math.sqrt(16)
+        echo "pow(2, 10) = " + math.pow(2, 10)
+      }
+
+  ArrayProcessor:
+    init: () => {
+        this.data = []
+      }
+    
+    fillData: (size) => {
+        this.data = []
+        for (i in range(size)) :
+          this.data = this.data + [i * 2]
+      }
+    
+    process: () => {
+        echo ""
+        echo "=== Array Processing ==="
+        echo "Data: " + this.data
+        echo "Length: " + len(this.data)
+        
+        # 遍历数组
+        sum = 0
+        for (item in this.data) :
+          sum = sum + item
+        echo "Sum: " + sum
+        
+        # 查找最大值
+        max_val = this.data[0]
+        for (item in this.data) :
+          if (item > max_val) :
+            max_val = item
+        echo "Max: " + max_val
+      }
+
+objects:
+  calc: Calculator()
+  processor: ArrayProcessor()
+
+main: () => {
+    # 计算器演示
+    calc.demonstrate()
+    
+    # 数组处理演示
+    processor.fillData(5)
+    processor.process()
+    
+    # 时间演示
+    echo ""
+    echo "=== Time Demo ==="
+    echo "Current timestamp: " + time.now()
+    echo "Current year: " + time.get_year()
+    
+    # 异常处理演示
+    echo ""
+    echo "=== Exception Handling Demo ==="
+    try :
+      echo "Trying to calculate..."
+      result = 10 / 0
+      echo "This won't print"
+    catch (error) :
+      echo "Caught error: " + error
+    echo "Program continues after catch"
+    
+    echo ""
+    echo "All demonstrations completed!"
+  }
+
+call: main()

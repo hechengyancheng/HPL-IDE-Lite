@@ -1,0 +1,34 @@
+# 示例 HPL 程序
+# 这是一个简单的 Hello World 程序
+
+classes:
+  Greeter:
+    init: (name) => {
+        this.name = name
+      }
+    
+    greet: () => {
+        echo "Hello, " + this.name + "!"
+      }
+    
+    greetMultiple: (times) => {
+        for (i in range(times)) :
+          echo "Greeting " + (i + 1) + ": Hello, " + this.name + "!"
+      }
+
+objects:
+  greeter: Greeter("World")
+
+main: () => {
+    # 调用对象方法
+    greeter.greet()
+    
+    echo ""
+    echo "Now with multiple greetings:"
+    greeter.greetMultiple(3)
+    
+    echo ""
+    echo "Program completed successfully!"
+  }
+
+call: main()
