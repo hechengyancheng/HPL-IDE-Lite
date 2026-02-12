@@ -12,10 +12,11 @@ from typing import Dict, Any, Optional
 try:
     from hpl_runtime import (
         HPLParser, HPLEvaluator, DebugInterpreter,
-        HPLSyntaxError, HPLRuntimeError, HPLImportError
+        HPLSyntaxError, HPLRuntimeError, HPLImportError, HPLNameError
     )
     HPL_AVAILABLE = True
 except ImportError:
+
     HPL_AVAILABLE = False
     print("警告: hpl_runtime 模块未安装，运行功能将不可用")
 
@@ -93,7 +94,8 @@ class HPLRunner:
             }
             
         except HPLSyntaxError as e:
-            error_msg = f"语法错误 [行 {e.line}, 列 {e.column}]: {e.message}"
+            error_msg = f"语法错误 [行 {e.line}, 列 {e.column}]: {str(e)}"
+
             self.last_result = {
                 'success': False,
                 'output': stdout_buffer.getvalue(),
@@ -104,8 +106,22 @@ class HPLRunner:
                 'call_stack': []
             }
             
+        except HPLNameError as e:
+            error_msg = f"名称错误: {str(e)}"
+            self.last_result = {
+                'success': False,
+                'output': stdout_buffer.getvalue(),
+                'error': error_msg,
+                'error_type': 'NameError',
+                'line': getattr(e, 'line', None),
+                'column': getattr(e, 'column', None),
+                'call_stack': getattr(e, 'call_stack', [])
+            }
+            
         except HPLRuntimeError as e:
-            error_msg = f"运行时错误: {e.message}"
+
+            error_msg = f"运行时错误: {str(e)}"
+
             if hasattr(e, 'call_stack') and e.call_stack:
                 error_msg += f"\n调用栈: {e.call_stack}"
             
@@ -233,9 +249,10 @@ class HPLRunner:
             return {
                 'line': e.line,
                 'column': e.column,
-                'message': e.message,
+                'message': str(e),
                 'error_code': getattr(e, 'error_code', 'SYNTAX_ERROR')
             }
+
         except Exception as e:
             return {
                 'line': 1,
