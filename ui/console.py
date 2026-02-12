@@ -33,20 +33,27 @@ class Console(ctk.CTkFrame):
         )
         clear_btn.pack(side="right", padx=5, pady=2)
         
-        # 输出区域
-        self.output = ctk.CTkTextbox(
+        # 输出区域 - 使用 tkinter.Text 直接以支持标签
+        import tkinter as tk
+        self.output = tk.Text(
             self,
             wrap="word",
             font=("Consolas", 10),
-            state="disabled"
+            state="disabled",
+            bg="#2b2b2b",
+            fg="#d4d4d4",
+            highlightthickness=0,
+            borderwidth=0
         )
         self.output.grid(row=1, column=0, sticky="nsew")
         
         # 配置标签
-        self.output.tag_config("normal", text_color="#d4d4d4")
-        self.output.tag_config("error", text_color="#f48771")
-        self.output.tag_config("success", text_color="#89d185")
-        self.output.tag_config("info", text_color="#75beff")
+        self.output.tag_config("normal", foreground="#d4d4d4")
+        self.output.tag_config("error", foreground="#f48771")
+        self.output.tag_config("success", foreground="#89d185")
+        self.output.tag_config("info", foreground="#75beff")
+
+
     
     def log(self, message, tag="normal"):
         """输出日志"""
