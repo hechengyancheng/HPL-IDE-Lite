@@ -77,7 +77,8 @@ class HPLRunner:
             # 解析文件
             logger.debug(f"解析文件: {file_path}")
             parser = HPLParser(file_path)
-            classes, objects, functions, main_func, call_target, call_args, imports = parser.parse()
+            classes, objects, functions, main_func, call_target, call_args, imports, user_data = parser.parse()
+
             logger.debug(f"解析完成: 发现 {len(classes)} 个类, {len(objects)} 个对象, {len(functions)} 个函数")
             
             # 创建执行器
