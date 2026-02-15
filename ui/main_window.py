@@ -5,10 +5,16 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import os
+import sys
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from .editor import CodeEditor
 from .console import Console
 from .file_tree import FileTree
+from utils.logger import logger, LogLevel
+
 
 
 class MainWindow:
@@ -60,6 +66,14 @@ class MainWindow:
             command=self._show_help_menu
         )
         help_btn.pack(side="left", padx=5, pady=2)
+        
+        # 查看菜单（日志）
+        view_btn = ctk.CTkButton(
+            menubar, text="查看", width=60, height=25,
+            command=self._show_view_menu
+        )
+        view_btn.pack(side="left", padx=5, pady=2)
+
     
     def _setup_layout(self):
         """设置主布局"""
@@ -104,14 +118,27 @@ class MainWindow:
             self.statusbar, text="", anchor="e"
         )
         self.file_info_label.pack(side="right", padx=10, pady=2)
-    
+        
+        # 设置日志系统
+        self._setup_logging()
+
     def _bind_shortcuts(self):
+
         """绑定快捷键"""
         self.root.bind("<Control-o>", lambda e: self._open_file())
         self.root.bind("<Control-s>", lambda e: self._save_file())
         self.root.bind("<Control-n>", lambda e: self._new_file())
         self.root.bind("<F5>", lambda e: self._run_code())
         self.root.bind("<F9>", lambda e: self._debug_code())
+    
+    def _setup_logging(self):
+        """设置日志系统"""
+        # 设置控制台回调
+        logger.set_console_callback(
+            lambda msg, level: self.console.log_with_level(msg, level)
+        )
+        logger.info("IDE 日志系统已启动")
+
     
     def _show_file_menu(self):
         """显示文件菜单"""
@@ -208,12 +235,107 @@ class MainWindow:
             else:
                 ctk.CTkFrame(menu, height=2).pack(fill="x", padx=10, pady=5)
     
+    def _show_view_menu(self):
+        """显示查看菜单（日志相关）"""
+        menu = ctk.CTkToplevel(self.root)
+        menu.title("查看")
+        menu.geometry("250x300")
+        menu.transient(self.root)
+        menu.grab_set()
+        
+        buttons = [
+            ("显示日志窗口", self._show_log_window),
+            ("清除日志", self._clear_logs),
+            ("", None),
+            ("日志级别: 调试", lambda: self._set_log_level(LogLevel.DEBUG)),
+            ("日志级别: 信息", lambda: self._set_log_level(LogLevel.INFO)),
+            ("日志级别: 警告", lambda: self._set_log_level(LogLevel.WARNING)),
+            ("日志级别: 错误", lambda: self._set_log_level(LogLevel.ERROR)),
+            ("", None),
+            ("启用文件日志", self._enable_file_logging),
+            ("打开日志文件", self._open_log_file),
+        ]
+        
+        for text, command in buttons:
+            if text:
+                btn = ctk.CTkButton(menu, text=text, command=command)
+                btn.pack(fill="x", padx=10, pady=2)
+            else:
+                ctk.CTkFrame(menu, height=2).pack(fill="x", padx=10, pady=5)
+    
+    def _show_log_window(self):
+        """显示日志窗口"""
+        log_window = ctk.CTkToplevel(self.root)
+        log_window.title("日志窗口")
+        log_window.geometry("600x400")
+        log_window.transient(self.root)
+        
+        # 日志文本区域
+        import tkinter as tk
+        log_text = tk.Text(
+            log_window,
+            wrap="word",
+            font=("Consolas", 10),
+            bg="#2b2b2b",
+            fg="#d4d4d4",
+            state="disabled"
+        )
+        log_text.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # 配置标签颜色
+        log_text.tag_config("debug", foreground="#858585")
+        log_text.tag_config("info", foreground="#75beff")
+        log_text.tag_config("warning", foreground="#dcdcaa")
+        log_text.tag_config("error", foreground="#f48771")
+        
+        # 加载历史日志
+        history = logger.get_log_history(limit=100)
+        log_text.configure(state="normal")
+        for entry in history:
+            level = entry['level'].lower()
+            message = entry['message']
+            log_text.insert("end", message + "\n", level)
+        log_text.see("end")
+        log_text.configure(state="disabled")
+        
+        # 设置日志回调，实时更新
+        def log_callback(message, level):
+            log_text.configure(state="normal")
+            log_text.insert("end", message + "\n", level)
+            log_text.see("end")
+            log_text.configure(state="disabled")
+        
+        # 临时设置回调（这里简化处理，实际应该管理回调）
+        logger.set_console_callback(lambda msg, lvl: self.console.log_with_level(msg, lvl))
+    
+    def _clear_logs(self):
+        """清除日志"""
+        logger.clear_history()
+        self.console.log_info("日志已清除")
+    
+    def _set_log_level(self, level):
+        """设置日志级别"""
+        logger.set_log_level(level)
+        self.console.log_info(f"日志级别已设置为: {level.value}")
+    
+    def _enable_file_logging(self):
+        """启用文件日志"""
+        logger.enable_file_logging(True)
+        self.console.log_info(f"文件日志已启用: {logger.get_current_log_file()}")
+    
+    def _open_log_file(self):
+        """打开日志文件"""
+        logger.open_log_file()
+
+    
     def _new_file(self):
         """新建文件"""
+        logger.info("创建新文件")
         self.current_file = None
         self.editor.clear()
         self._update_title()
         self._set_status("新建文件")
+
     
     def _open_file(self, file_path=None):
         """打开文件"""
@@ -225,14 +347,18 @@ class MainWindow:
         
         if file_path:
             try:
+                logger.info(f"打开文件: {file_path}")
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 self.editor.set_content(content)
                 self.current_file = file_path
                 self._update_title()
                 self._set_status(f"已打开: {file_path}")
+                logger.info(f"文件打开成功: {file_path}")
             except Exception as e:
+                logger.error(f"打开文件失败: {file_path}, 错误: {str(e)}")
                 messagebox.showerror("错误", f"无法打开文件: {str(e)}")
+
     
     def _save_file(self):
         """保存文件"""
@@ -240,14 +366,18 @@ class MainWindow:
             return self._save_as_file()
         
         try:
+            logger.info(f"保存文件: {self.current_file}")
             content = self.editor.get_content()
             with open(self.current_file, 'w', encoding='utf-8') as f:
                 f.write(content)
             self._set_status(f"已保存: {self.current_file}")
+            logger.info(f"文件保存成功: {self.current_file}")
             return True
         except Exception as e:
+            logger.error(f"保存文件失败: {self.current_file}, 错误: {str(e)}")
             messagebox.showerror("错误", f"无法保存文件: {str(e)}")
             return False
+
     
     def _save_as_file(self):
         """另存为"""
@@ -266,9 +396,12 @@ class MainWindow:
         """打开文件夹"""
         folder = filedialog.askdirectory(title="选择项目文件夹")
         if folder:
+            logger.info(f"打开文件夹: {folder}")
             self.current_project_dir = folder
             self.file_tree.load_directory(folder)
             self._set_status(f"已打开文件夹: {folder}")
+            logger.info(f"文件夹加载完成: {folder}")
+
     
     def _on_file_select(self, file_path):
         """文件树选择回调"""
@@ -280,6 +413,9 @@ class MainWindow:
     
     def _run_code(self):
         """运行代码"""
+        import time
+        start_time = time.time()
+        
         if not self.current_file:
             # 先保存为临时文件
             if not self._save_as_file():
@@ -289,6 +425,7 @@ class MainWindow:
         if not self._save_file():
             return
         
+        logger.info(f"开始运行: {self.current_file}")
         self._set_status(f"正在运行: {self.current_file}")
         self.console.clear()
         self.console.log(f"运行: {self.current_file}")
@@ -299,21 +436,29 @@ class MainWindow:
         runner = HPLRunner()
         result = runner.run(self.current_file)
         
+        elapsed_time = time.time() - start_time
+        
         if result['success']:
+            logger.info(f"代码执行成功，耗时: {elapsed_time:.2f}秒")
             if result['output']:
                 self.console.log(result['output'])
             self.console.log("-" * 50)
-            self.console.log("执行完成")
-            self._set_status("执行完成")
+            self.console.log(f"执行完成 (耗时: {elapsed_time:.2f}秒)")
+            self._set_status(f"执行完成 ({elapsed_time:.2f}秒)")
         else:
+            logger.error(f"代码执行失败: {result['error']}, 类型: {result['error_type']}")
             self.console.log("-" * 50)
             self.console.log(f"错误: {result['error']}")
             if result.get('line'):
                 self.editor.highlight_error_line(result['line'])
             self._set_status(f"执行失败: {result['error_type']}")
+
     
     def _debug_code(self):
         """调试代码"""
+        import time
+        start_time = time.time()
+        
         if not self.current_file:
             if not self._save_as_file():
                 return
@@ -321,6 +466,7 @@ class MainWindow:
         if not self._save_file():
             return
         
+        logger.info(f"开始调试: {self.current_file}")
         self._set_status(f"调试模式: {self.current_file}")
         self.console.clear()
         self.console.log(f"调试: {self.current_file}")
@@ -330,7 +476,10 @@ class MainWindow:
         runner = HPLRunner()
         result = runner.debug(self.current_file)
         
+        elapsed_time = time.time() - start_time
+        
         if result['success']:
+            logger.info(f"调试完成，耗时: {elapsed_time:.2f}秒")
             self.console.log("调试信息:")
             if result.get('trace'):
                 for entry in result['trace']:
@@ -340,12 +489,14 @@ class MainWindow:
                 for snapshot in result['variables']:
                     self.console.log(f"  行 {snapshot['line']}: {snapshot}")
             self.console.log("-" * 50)
-            self.console.log("调试完成")
-            self._set_status("调试完成")
+            self.console.log(f"调试完成 (耗时: {elapsed_time:.2f}秒)")
+            self._set_status(f"调试完成 ({elapsed_time:.2f}秒)")
         else:
+            logger.error(f"调试失败: {result['error']}")
             self.console.log("-" * 50)
             self.console.log(f"调试错误: {result['error']}")
             self._set_status(f"调试失败")
+
     
     def _stop_code(self):
         """停止运行"""
@@ -405,4 +556,6 @@ Ctrl+F - 查找
     
     def run(self):
         """启动应用"""
+        logger.info("HPL IDE 启动")
         self.root.mainloop()
+        logger.info("HPL IDE 关闭")

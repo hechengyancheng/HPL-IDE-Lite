@@ -6,7 +6,13 @@ HPL 执行器封装
 import sys
 import io
 import traceback
+import time
+import os
 from typing import Dict, Any, Optional
+
+# 导入日志模块
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.logger import logger
 
 # 导入 hpl_runtime
 try:
@@ -16,9 +22,10 @@ try:
     )
     HPL_AVAILABLE = True
 except ImportError:
-
     HPL_AVAILABLE = False
     print("警告: hpl_runtime 模块未安装，运行功能将不可用")
+    logger.warning("hpl_runtime 模块未安装，运行功能将不可用")
+
 
 
 class HPLRunner:
@@ -42,7 +49,11 @@ class HPLRunner:
                 'call_stack': list  # 调用栈
             }
         """
+        start_time = time.time()
+        logger.info(f"开始解析和运行 HPL 文件: {file_path}")
+        
         if not HPL_AVAILABLE:
+            logger.error("hpl_runtime 模块未安装")
             return {
                 'success': False,
                 'output': '',
@@ -64,8 +75,10 @@ class HPLRunner:
             sys.stderr = stderr_buffer
             
             # 解析文件
+            logger.debug(f"解析文件: {file_path}")
             parser = HPLParser(file_path)
             classes, objects, functions, main_func, call_target, call_args, imports = parser.parse()
+            logger.debug(f"解析完成: 发现 {len(classes)} 个类, {len(objects)} 个对象, {len(functions)} 个函数")
             
             # 创建执行器
             evaluator = HPLEvaluator(
@@ -78,10 +91,13 @@ class HPLRunner:
             )
             
             # 执行
+            logger.debug("开始执行 HPL 代码")
             evaluator.run()
             
             # 获取输出
             output = stdout_buffer.getvalue()
+            elapsed_time = time.time() - start_time
+            logger.info(f"HPL 代码执行成功，耗时: {elapsed_time:.3f}秒")
             
             self.last_result = {
                 'success': True,
@@ -94,7 +110,9 @@ class HPLRunner:
             }
             
         except HPLSyntaxError as e:
+            elapsed_time = time.time() - start_time
             error_msg = f"语法错误 [行 {e.line}, 列 {e.column}]: {str(e)}"
+            logger.error(f"语法错误 (耗时: {elapsed_time:.3f}秒): {error_msg}")
 
             self.last_result = {
                 'success': False,
@@ -107,7 +125,9 @@ class HPLRunner:
             }
             
         except HPLNameError as e:
+            elapsed_time = time.time() - start_time
             error_msg = f"名称错误: {str(e)}"
+            logger.error(f"名称错误 (耗时: {elapsed_time:.3f}秒): {error_msg}")
             self.last_result = {
                 'success': False,
                 'output': stdout_buffer.getvalue(),
@@ -119,11 +139,11 @@ class HPLRunner:
             }
             
         except HPLRuntimeError as e:
-
+            elapsed_time = time.time() - start_time
             error_msg = f"运行时错误: {str(e)}"
-
             if hasattr(e, 'call_stack') and e.call_stack:
                 error_msg += f"\n调用栈: {e.call_stack}"
+            logger.error(f"运行时错误 (耗时: {elapsed_time:.3f}秒): {error_msg}")
             
             self.last_result = {
                 'success': False,
@@ -136,7 +156,9 @@ class HPLRunner:
             }
             
         except HPLImportError as e:
+            elapsed_time = time.time() - start_time
             error_msg = f"导入错误: {str(e)}"
+            logger.error(f"导入错误 (耗时: {elapsed_time:.3f}秒): {error_msg}")
             self.last_result = {
                 'success': False,
                 'output': stdout_buffer.getvalue(),
@@ -148,7 +170,10 @@ class HPLRunner:
             }
             
         except Exception as e:
+            elapsed_time = time.time() - start_time
             error_msg = f"内部错误: {str(e)}"
+            logger.error(f"内部错误 (耗时: {elapsed_time:.3f}秒): {error_msg}")
+            logger.debug(f"错误详情: {traceback.format_exc()}")
             self.last_result = {
                 'success': False,
                 'output': stdout_buffer.getvalue(),
@@ -164,6 +189,7 @@ class HPLRunner:
             sys.stderr = old_stderr
         
         return self.last_result
+
     
     def debug(self, file_path: str) -> Dict[str, Any]:
         """
@@ -179,7 +205,11 @@ class HPLRunner:
                 'call_stack': list  # 调用栈历史
             }
         """
+        start_time = time.time()
+        logger.info(f"开始调试 HPL 文件: {file_path}")
+        
         if not HPL_AVAILABLE:
+            logger.error("hpl_runtime 模块未安装，无法调试")
             return {
                 'success': False,
                 'output': '',
@@ -197,10 +227,16 @@ class HPLRunner:
             sys.stdout = stdout_buffer
             
             # 使用调试解释器
+            logger.debug("初始化调试解释器")
             interpreter = DebugInterpreter(debug_mode=True, verbose=False)
             result = interpreter.run(file_path)
             
             debug_info = result.get('debug_info', {})
+            elapsed_time = time.time() - start_time
+            
+            trace_count = len(debug_info.get('execution_trace', []))
+            var_count = len(debug_info.get('variable_snapshots', []))
+            logger.info(f"调试完成，耗时: {elapsed_time:.3f}秒，跟踪 {trace_count} 步，{var_count} 个变量快照")
             
             return {
                 'success': result.get('success', False),
@@ -212,10 +248,14 @@ class HPLRunner:
             }
             
         except Exception as e:
+            elapsed_time = time.time() - start_time
+            error_msg = f"调试错误: {str(e)}"
+            logger.error(f"调试异常 (耗时: {elapsed_time:.3f}秒): {error_msg}")
+            logger.debug(f"错误详情: {traceback.format_exc()}")
             return {
                 'success': False,
                 'output': stdout_buffer.getvalue(),
-                'error': f"调试错误: {str(e)}\n{traceback.format_exc()}",
+                'error': f"{error_msg}\n{traceback.format_exc()}",
                 'trace': [],
                 'variables': [],
                 'call_stack': []
@@ -223,6 +263,7 @@ class HPLRunner:
             
         finally:
             sys.stdout = old_stdout
+
     
     def check_syntax(self, file_path: str) -> Optional[Dict[str, Any]]:
         """
@@ -232,7 +273,10 @@ class HPLRunner:
             None - 语法正确
             Dict - 错误信息
         """
+        logger.debug(f"检查语法: {file_path}")
+        
         if not HPL_AVAILABLE:
+            logger.warning("hpl_runtime 模块未安装，无法检查语法")
             return {
                 'line': 1,
                 'column': 1,
@@ -243,9 +287,11 @@ class HPLRunner:
         try:
             parser = HPLParser(file_path)
             parser.parse()
+            logger.debug(f"语法检查通过: {file_path}")
             return None  # 无错误
             
         except HPLSyntaxError as e:
+            logger.warning(f"语法错误 [行 {e.line}, 列 {e.column}]: {str(e)}")
             return {
                 'line': e.line,
                 'column': e.column,
@@ -254,12 +300,14 @@ class HPLRunner:
             }
 
         except Exception as e:
+            logger.error(f"语法检查异常: {str(e)}")
             return {
                 'line': 1,
                 'column': 1,
                 'message': str(e),
                 'error_code': 'UNKNOWN_ERROR'
             }
+
     
     def get_completions(self, file_path: str, prefix: str = "") -> list:
         """
@@ -268,7 +316,10 @@ class HPLRunner:
         Returns:
             list of dict: [{'label': str, 'kind': str, 'detail': str}]
         """
+        logger.debug(f"获取代码补全: {file_path}, 前缀: '{prefix}'")
+        
         if not HPL_AVAILABLE:
+            logger.warning("hpl_runtime 模块未安装，无法获取补全")
             return []
         
         try:
@@ -307,7 +358,9 @@ class HPLRunner:
                         'detail': f'Function {name}({", ".join(params)})'
                     })
             
+            logger.debug(f"找到 {len(items)} 个补全项")
             return items
             
-        except Exception:
+        except Exception as e:
+            logger.warning(f"获取补全失败: {str(e)}")
             return []

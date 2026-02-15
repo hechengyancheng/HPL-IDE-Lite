@@ -5,9 +5,15 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import font
+import sys
+import os
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from .autocomplete import AutocompleteManager
 from .syntax_checker import SyntaxChecker
+from utils.logger import logger
 
 
 class CodeEditor(ctk.CTkFrame):
@@ -26,6 +32,8 @@ class CodeEditor(ctk.CTkFrame):
         self.autocomplete = AutocompleteManager(self.text_widget)
         self.syntax_checker = SyntaxChecker(self.text_widget, self._on_syntax_errors)
         self.syntax_errors = []
+        
+        logger.debug("代码编辑器初始化完成")
     
     def _setup_ui(self):
         """设置界面"""
@@ -165,6 +173,7 @@ class CodeEditor(ctk.CTkFrame):
         # 标记所有错误行
         for error in errors:
             self.text_widget.tag_add("error", f"{error.line}.0", f"{error.line}.end")
+            logger.warning(f"语法错误 [行 {error.line}]: {error.message}")
         
         # 通知父窗口显示错误
         if hasattr(self.master, 'on_syntax_errors'):
@@ -265,6 +274,7 @@ class CodeEditor(ctk.CTkFrame):
     def _on_focus_in(self, event):
         """获得焦点"""
         self._highlight_current_line()
+        logger.debug("编辑器获得焦点")
     
     def _on_focus_out(self, event):
         """失去焦点"""
@@ -276,6 +286,7 @@ class CodeEditor(ctk.CTkFrame):
     
     def set_content(self, content):
         """设置内容"""
+        logger.info(f"加载内容到编辑器，共 {len(content)} 字符")
         self.text_widget.delete("1.0", "end")
         self.text_widget.insert("1.0", content)
         self._update_line_numbers()
@@ -286,6 +297,7 @@ class CodeEditor(ctk.CTkFrame):
     
     def clear(self):
         """清空"""
+        logger.debug("清空编辑器内容")
         self.text_widget.delete("1.0", "end")
         self._update_line_numbers()
         self.error_line = None
@@ -307,6 +319,7 @@ class CodeEditor(ctk.CTkFrame):
         
         # 滚动到错误行
         self.text_widget.see(f"{line}.0")
+        logger.debug(f"高亮错误行: {line}")
     
     def clear_error_highlight(self):
         """清除错误高亮"""
@@ -317,6 +330,7 @@ class CodeEditor(ctk.CTkFrame):
         """撤销"""
         try:
             self.text_widget.edit_undo()
+            logger.debug("执行撤销操作")
         except tk.TclError:
             pass
     
@@ -324,16 +338,19 @@ class CodeEditor(ctk.CTkFrame):
         """重做"""
         try:
             self.text_widget.edit_redo()
+            logger.debug("执行重做操作")
         except tk.TclError:
             pass
     
     def cut(self):
         """剪切"""
         self.text_widget.event_generate("<<Cut>>")
+        logger.debug("执行剪切操作")
     
     def copy(self):
         """复制"""
         self.text_widget.event_generate("<<Copy>>")
+        logger.debug("执行复制操作")
     
     def paste(self):
         """粘贴"""
@@ -342,6 +359,7 @@ class CodeEditor(ctk.CTkFrame):
         self._apply_syntax_highlighting()
         # 触发语法检查
         self.syntax_checker.check_now()
+        logger.debug("执行粘贴操作")
     
     def show_find(self):
         """显示查找对话框"""
@@ -365,6 +383,7 @@ class CodeEditor(ctk.CTkFrame):
                     self.text_widget.see(pos)
                     self.text_widget.mark_set("insert", f"{pos}+{len(search_text)}c")
                     self.text_widget.focus()
+                    logger.debug(f"查找: '{search_text}' 在位置 {pos}")
         
         btn = ctk.CTkButton(dialog, text="查找下一个", command=find_next)
         btn.pack(pady=5)
