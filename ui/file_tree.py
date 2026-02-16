@@ -48,19 +48,30 @@ class FileTree(ctk.CTkFrame):
         scrollbar.grid(row=1, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=scrollbar.set)
         
-        # 配置样式
+        # 配置样式 - 确保暗色主题
         style = ttk.Style()
+        style.theme_use('default')
         style.configure("Treeview", 
             background="#2b2b2b",
             foreground="#d4d4d4",
             fieldbackground="#2b2b2b",
-            font=("Arial", 10)
+            font=("Arial", 10),
+            rowheight=25
         )
         style.configure("Treeview.Heading",
             background="#3c3c3c",
             foreground="#d4d4d4",
             font=("Arial", 10, "bold")
         )
+        # 选中项样式
+        style.map("Treeview",
+            background=[("selected", "#0e6395")],
+            foreground=[("selected", "#ffffff")]
+        )
+        
+        # 设置 Frame 背景色
+        self.configure(fg_color="#2b2b2b")
+
         
         # 隐藏表头
         self.tree["show"] = "tree"

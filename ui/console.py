@@ -52,6 +52,9 @@ class Console(ctk.CTkFrame):
         self.output.tag_config("error", foreground="#f48771")
         self.output.tag_config("success", foreground="#89d185")
         self.output.tag_config("info", foreground="#75beff")
+        self.output.tag_config("debug", foreground="#858585")  # 灰色
+        self.output.tag_config("warning", foreground="#dcdcaa")  # 黄色
+
 
 
     
@@ -73,6 +76,34 @@ class Console(ctk.CTkFrame):
     def log_info(self, message):
         """输出信息"""
         self.log(message, "info")
+    
+    def log_debug(self, message):
+        """输出调试信息"""
+        self.log(message, "debug")
+    
+    def log_warning(self, message):
+        """输出警告信息"""
+        self.log(message, "warning")
+    
+    def log_with_level(self, message, level="info"):
+        """
+        根据级别输出日志
+        
+        Args:
+            message: 日志消息
+            level: 日志级别 (debug, info, warning, error, success)
+        """
+        level_map = {
+            "debug": "debug",
+            "info": "info",
+            "warning": "warning",
+            "error": "error",
+            "success": "success",
+            "critical": "error"
+        }
+        tag = level_map.get(level.lower(), "normal")
+        self.log(message, tag)
+
     
     def clear(self):
         """清除控制台"""
