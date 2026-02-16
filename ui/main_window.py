@@ -554,8 +554,21 @@ Ctrl+F - 查找
             line, col = self.editor.get_cursor_position()
             self.file_info_label.configure(text=f"行 {line}, 列 {col} | {self.current_file or '未保存'}")
     
+    def _cleanup(self):
+        """清理资源（应用关闭时调用）"""
+        logger.clear_console_callback()
+    
     def run(self):
         """启动应用"""
         logger.info("HPL IDE 启动")
+        
+        # 设置窗口关闭处理
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        
         self.root.mainloop()
+    
+    def _on_close(self):
+        """窗口关闭处理"""
         logger.info("HPL IDE 关闭")
+        self._cleanup()
+        self.root.destroy()

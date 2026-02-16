@@ -141,7 +141,18 @@ class IDELogger:
             try:
                 self._console_callback(formatted_message, level.value.lower())
             except Exception as e:
-                print(f"控制台回调失败: {e}", file=sys.stderr)
+                # 忽略Tkinter widget销毁后的回调错误
+                error_msg = str(e)
+                if "invalid command name" in error_msg:
+                    # Widget已被销毁，静默忽略
+                    pass
+                else:
+                    print(f"控制台回调失败: {e}", file=sys.stderr)
+    
+    def clear_console_callback(self):
+        """清除控制台回调（用于应用关闭时）"""
+        self._console_callback = None
+
     
     def _add_to_history(self, formatted_message: str, level: LogLevel):
         """添加到历史记录"""
