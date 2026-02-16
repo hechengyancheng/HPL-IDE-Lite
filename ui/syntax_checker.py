@@ -1,21 +1,37 @@
 """
 实时语法检查组件
+集成 hpl_runtime 进行准确的语法检查
 """
 
-import re
-import threading
-import yaml
+import sys
+import os
+import tempfile
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from hpl_runtime import HPLParser, HPLSyntaxError
+    HPL_AVAILABLE = True
+except ImportError:
+    HPL_AVAILABLE = False
+
+from utils.logger import logger
 
 
-class SyntaxError:
+class SyntaxErrorInfo:
     """语法错误信息"""
     
-    def __init__(self, line, message, error_type='Syntax'):
+    def __init__(self, line, message, error_type='Syntax', column=None, error_key=None):
         self.line = line
         self.message = message
         self.error_type = error_type
+        self.column = column
+        self.error_key = error_key
     
     def __str__(self):
+        if self.column:
+            return f"Line {self.line}, Col {self.column}: [{self.error_type}] {self.message}"
         return f"Line {self.line}: [{self.error_type}] {self.message}"
 
 
@@ -53,17 +69,55 @@ class SyntaxChecker:
         )
     
     def _perform_check(self):
-        """执行语法检查"""
+        """执行语法检查 - 使用 hpl_runtime.HPLParser"""
         content = self.text_widget.get('1.0', 'end-1c')
         errors = []
         
-        # 执行各种检查
-        errors.extend(self._check_yaml_structure(content))
-        errors.extend(self._check_indentation(content))
-        errors.extend(self._check_braces_and_parens(content))
-        errors.extend(self._check_control_flow_syntax(content))
-        errors.extend(self._check_class_syntax(content))
-        errors.extend(self._check_function_syntax(content))
+        if not HPL_AVAILABLE:
+            logger.warning("hpl_runtime 不可用，跳过语法检查")
+            self.last_errors = errors
+            if self.error_callback:
+                self.error_callback(errors)
+            return errors
+        
+        # 使用 HPLParser 进行准确的语法检查
+        try:
+            # 创建临时文件供 HPLParser 使用
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.hpl', delete=False, encoding='utf-8') as f:
+                f.write(content)
+                temp_file = f.name
+            
+            try:
+                parser = HPLParser(temp_file)
+                parser.parse()  # 如果解析成功，无语法错误
+                logger.debug("语法检查通过")
+            finally:
+                # 清理临时文件
+                try:
+                    os.unlink(temp_file)
+                except OSError:
+                    pass
+                    
+        except HPLSyntaxError as e:
+            # 转换 HPLSyntaxError 为 SyntaxErrorInfo
+            error_info = SyntaxErrorInfo(
+                line=e.line if e.line else 1,
+                message=str(e),
+                error_type='SyntaxError',
+                column=e.column,
+                error_key=getattr(e, 'error_key', None)
+            )
+            errors.append(error_info)
+            logger.debug(f"发现语法错误: {error_info}")
+        except Exception as e:
+            # 其他错误（如文件问题）
+            error_info = SyntaxErrorInfo(
+                line=1,
+                message=f"检查失败: {str(e)}",
+                error_type='CheckError'
+            )
+            errors.append(error_info)
+            logger.error(f"语法检查异常: {e}")
         
         # 更新错误列表
         self.last_errors = errors
@@ -71,408 +125,6 @@ class SyntaxChecker:
         # 调用回调函数
         if self.error_callback:
             self.error_callback(errors)
-        
-        return errors
-    
-    def _check_yaml_structure(self, content):
-        """检查 YAML 结构"""
-        errors = []
-        lines = content.split('\n')
-        
-        # 检查顶级键
-        valid_top_keys = ['includes', 'imports', 'classes', 'objects', 'main', 'call']
-        found_top_keys = []
-        
-        for i, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                continue
-            
-            # 检查是否是顶级键
-            if not line.startswith(' ') and ':' in stripped:
-                key = stripped.split(':')[0].strip()
-                if key and key not in valid_top_keys:
-                    # 可能是函数定义，检查是否是函数
-                    if '=>' not in stripped:
-                        errors.append(SyntaxError(
-                            i, 
-                            f"Unknown top-level key '{key}'. Valid keys: {', '.join(valid_top_keys)}",
-                            'Structure'
-                        ))
-                elif key:
-                    found_top_keys.append(key)
-        
-        # 检查 call 是否存在（可选，但推荐）
-        if 'main' in found_top_keys and 'call' not in found_top_keys:
-            # 这只是警告，不是错误
-            pass
-        
-        # 检查 YAML 基本语法
-        try:
-            yaml.safe_load(content)
-        except yaml.YAMLError as e:
-            # 解析 YAML 错误位置
-            error_str = str(e)
-            if 'line' in error_str.lower():
-                # 尝试提取行号
-                match = re.search(r'line\s+(\d+)', error_str, re.IGNORECASE)
-                if match:
-                    line_num = int(match.group(1))
-                    errors.append(SyntaxError(
-                        line_num,
-                        f"YAML syntax error: {error_str}",
-                        'YAML'
-                    ))
-        
-        return errors
-    
-    def _check_indentation(self, content):
-        """检查缩进"""
-        errors = []
-        lines = content.split('\n')
-        
-        expected_indent = 0
-        in_code_block = False
-        
-        for i, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                continue
-            
-            actual_indent = len(line) - len(line.lstrip())
-            
-            # 检查顶级键
-            if not line.startswith(' ') and ':' in stripped:
-                expected_indent = 0
-                in_code_block = False
-                
-                # 检查是否在代码块中
-                if '=>' in stripped or stripped.endswith(':'):
-                    in_code_block = True
-                    expected_indent = 2
-            
-            # 检查缩进级别
-            elif in_code_block:
-                if actual_indent % 2 != 0:
-                    errors.append(SyntaxError(
-                        i,
-                        f"Invalid indentation: {actual_indent} spaces. Use 2-space indentation.",
-                        'Indentation'
-                    ))
-                
-                # 检查是否退出代码块
-                if actual_indent < expected_indent and stripped:
-                    in_code_block = False
-                    expected_indent = 0
-            
-            # 检查混合使用制表符和空格
-            if '\t' in line:
-                errors.append(SyntaxError(
-                    i,
-                    "Use spaces instead of tabs for indentation",
-                    'Indentation'
-                ))
-        
-        return errors
-    
-    def _check_braces_and_parens(self, content):
-        """检查大括号和括号匹配"""
-        errors = []
-        lines = content.split('\n')
-        
-        for i, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                continue
-            
-            # 检查大括号
-            open_braces = stripped.count('{')
-            close_braces = stripped.count('}')
-            
-            # 检查括号
-            open_parens = stripped.count('(')
-            close_parens = stripped.count(')')
-            
-            # 检查方括号
-            open_brackets = stripped.count('[')
-            close_brackets = stripped.count(']')
-            
-            # 检查字符串中的括号（简单处理）
-            in_string = False
-            string_char = None
-            cleaned = ''
-            for char in stripped:
-                if char in '"\'':
-                    if not in_string:
-                        in_string = True
-                        string_char = char
-                    elif char == string_char:
-                        in_string = False
-                        string_char = None
-                elif not in_string:
-                    cleaned += char
-            
-            # 重新计算（排除字符串内）
-            open_braces = cleaned.count('{')
-            close_braces = cleaned.count('}')
-            open_parens = cleaned.count('(')
-            close_parens = cleaned.count(')')
-            open_brackets = cleaned.count('[')
-            close_brackets = cleaned.count(']')
-            
-            # 检查箭头函数语法
-            if '=>' in stripped:
-                # 检查是否有匹配的括号
-                if open_parens != close_parens:
-                    errors.append(SyntaxError(
-                        i,
-                        f"Mismatched parentheses in function definition: {open_parens} opening, {close_parens} closing",
-                        'Syntax'
-                    ))
-                
-                # 检查箭头函数的大括号
-                if open_braces != close_braces:
-                    errors.append(SyntaxError(
-                        i,
-                        f"Mismatched braces in function definition: {open_braces} opening, {close_braces} closing",
-                        'Syntax'
-                    ))
-            
-            # 检查数组和字典
-            if open_brackets != close_brackets:
-                errors.append(SyntaxError(
-                    i,
-                    f"Mismatched brackets: {open_brackets} opening, {close_brackets} closing",
-                    'Syntax'
-                ))
-        
-        return errors
-    
-    def _check_control_flow_syntax(self, content):
-        """检查控制流语法"""
-        errors = []
-        lines = content.split('\n')
-        
-        for i, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                continue
-            
-            # 检查 if 语句
-            if stripped.startswith('if '):
-                if not stripped.endswith(':'):
-                    errors.append(SyntaxError(
-                        i,
-                        "If statement must end with ':'",
-                        'ControlFlow'
-                    ))
-                if '(' not in stripped or ')' not in stripped:
-                    errors.append(SyntaxError(
-                        i,
-                        "If condition must be enclosed in parentheses",
-                        'ControlFlow'
-                    ))
-            
-            # 检查 else 语句
-            elif stripped == 'else':
-                errors.append(SyntaxError(
-                    i,
-                    "Else must be followed by ':'",
-                    'ControlFlow'
-                ))
-            
-            # 检查 for 语句
-            elif stripped.startswith('for '):
-                if not stripped.endswith(':'):
-                    errors.append(SyntaxError(
-                        i,
-                        "For statement must end with ':'",
-                        'ControlFlow'
-                    ))
-                if ' in ' not in stripped:
-                    errors.append(SyntaxError(
-                        i,
-                        "For statement must use 'in' keyword (e.g., for (i in range(5)) :)",
-                        'ControlFlow'
-                    ))
-                if '(' not in stripped or ')' not in stripped:
-                    errors.append(SyntaxError(
-                        i,
-                        "For loop must be enclosed in parentheses",
-                        'ControlFlow'
-                    ))
-            
-            # 检查 while 语句
-            elif stripped.startswith('while '):
-                if not stripped.endswith(':'):
-                    errors.append(SyntaxError(
-                        i,
-                        "While statement must end with ':'",
-                        'ControlFlow'
-                    ))
-                if '(' not in stripped or ')' not in stripped:
-                    errors.append(SyntaxError(
-                        i,
-                        "While condition must be enclosed in parentheses",
-                        'ControlFlow'
-                    ))
-            
-            # 检查 try-catch
-            elif stripped == 'try':
-                errors.append(SyntaxError(
-                    i,
-                    "Try must be followed by ':'",
-                    'ControlFlow'
-                ))
-            elif stripped.startswith('catch '):
-                if not stripped.endswith(':'):
-                    errors.append(SyntaxError(
-                        i,
-                        "Catch must end with ':'",
-                        'ControlFlow'
-                    ))
-                if '(' not in stripped or ')' not in stripped:
-                    errors.append(SyntaxError(
-                        i,
-                        "Catch must specify error variable in parentheses",
-                        'ControlFlow'
-                    ))
-        
-        return errors
-    
-    def _check_class_syntax(self, content):
-        """检查类定义语法"""
-        errors = []
-        lines = content.split('\n')
-        
-        in_classes = False
-        current_class = None
-        
-        for i, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                continue
-            
-            # 检测 classes 部分
-            if stripped == 'classes:':
-                in_classes = True
-                continue
-            elif not line.startswith(' ') and ':' in stripped:
-                in_classes = False
-                current_class = None
-                continue
-            
-            if in_classes:
-                indent = len(line) - len(line.lstrip())
-                
-                # 类名（缩进2个空格）
-                if indent == 2 and ':' in stripped:
-                    class_name = stripped.split(':')[0].strip()
-                    
-                    # 检查类名是否有效
-                    if not re.match(r'^[A-Z][a-zA-Z0-9_]*$', class_name):
-                        if class_name != 'parent':  # parent 是特殊键
-                            errors.append(SyntaxError(
-                                i,
-                                f"Class name '{class_name}' should start with uppercase letter",
-                                'Naming'
-                            ))
-                    
-                    current_class = class_name
-                    if class_name != 'parent':
-                        # 检查类定义是否为空
-                        next_line_idx = i
-                        if next_line_idx < len(lines):
-                            next_line = lines[next_line_idx]
-                            next_indent = len(next_line) - len(next_line.lstrip())
-                            if next_indent <= 2 and next_line.strip():
-                                errors.append(SyntaxError(
-                                    i,
-                                    f"Class '{class_name}' appears to be empty or not properly indented",
-                                    'Class'
-                                ))
-                
-                # 方法定义（缩进4个空格）
-                elif indent == 4 and current_class and '=>' in stripped:
-                    # 提取方法名
-                    method_part = stripped.split('=>')[0].strip()
-                    if ':' in method_part:
-                        method_name = method_part.split(':')[0].strip()
-                        
-                        # 检查方法名
-                        if not re.match(r'^[a-z_][a-zA-Z0-9_]*$', method_name):
-                            errors.append(SyntaxError(
-                                i,
-                                f"Method name '{method_name}' should start with lowercase letter or underscore",
-                                'Naming'
-                            ))
-                        
-                        # 检查参数列表
-                        if '(' in method_part and ')' in method_part:
-                            params_str = method_part[method_part.find('(')+1:method_part.find(')')]
-                            params = [p.strip() for p in params_str.split(',') if p.strip()]
-                            
-                            for param in params:
-                                if not re.match(r'^[a-z_][a-zA-Z0-9_]*$', param):
-                                    errors.append(SyntaxError(
-                                        i,
-                                        f"Parameter name '{param}' should start with lowercase letter or underscore",
-                                        'Naming'
-                                    ))
-        
-        return errors
-    
-    def _check_function_syntax(self, content):
-        """检查函数定义语法"""
-        errors = []
-        lines = content.split('\n')
-        
-        for i, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                continue
-            
-            # 检查顶层函数定义（不在 classes 中）
-            if '=>' in stripped and not line.startswith('  '):
-                # 检查是否是有效的函数定义
-                if ':' not in stripped:
-                    errors.append(SyntaxError(
-                        i,
-                        "Function definition must have ':' before '=>'",
-                        'Function'
-                    ))
-                    continue
-                
-                # 提取函数名和参数
-                func_part = stripped.split('=>')[0].strip()
-                func_name = func_part.split(':')[0].strip()
-                
-                # 检查函数名
-                if not re.match(r'^[a-z_][a-zA-Z0-9_]*$', func_name):
-                    if func_name not in ['main', 'call', 'includes', 'imports', 'classes', 'objects']:
-                        errors.append(SyntaxError(
-                            i,
-                            f"Function name '{func_name}' should start with lowercase letter or underscore",
-                            'Naming'
-                        ))
-                
-                # 检查参数
-                if '(' in func_part and ')' in func_part:
-                    params_str = func_part[func_part.find('(')+1:func_part.find(')')]
-                    params = [p.strip() for p in params_str.split(',') if p.strip()]
-                    
-                    for param in params:
-                        if not re.match(r'^[a-z_][a-zA-Z0-9_]*$', param):
-                            errors.append(SyntaxError(
-                                i,
-                                f"Parameter name '{param}' should start with lowercase letter or underscore",
-                                'Naming'
-                            ))
-                
-                # 检查大括号
-                if '{' not in stripped or '}' not in stripped:
-                    # 可能是多行函数，检查下一行
-                    pass
         
         return errors
     
